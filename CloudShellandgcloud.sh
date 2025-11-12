@@ -1,42 +1,56 @@
 #!/bin/bash
-# =========================================================
-# GSP002 - Automação Completa | Mentor GCP by Rafael & GPT
-# Tempo estimado de execução: ~2 minutos
-# =========================================================
 
 echo "===== Inicializando ambiente do Cloud Shell ====="
 
-# 1. Captura e exporta o ID do projeto e zona padrão
-export PROJECT_ID=$(gcloud config get-value project)
-echo "Projeto ativo: $PROJECT_ID"
+# Solicita os dados do ambiente manualmente (pois Qwiklabs gera novos a cada execução)
+read -p "Digite o PROJECT ID fornecido pelo lab (ex: qwiklabs-gcp-02-xxxx): " PROJECT_ID
+read -p "Digite a REGION (ex: us-west1): " REGION
+read -p "Digite a ZONE (ex: us-west1-c): " ZONE
 
-# Define região e zona padrão (ajuste se necessário)
-REGION="us-east1"
-ZONE="us-east1-c"
-
+echo ""
+echo "===== Configurando projeto, região e zona ====="
+gcloud config set project $PROJECT_ID
 gcloud config set compute/region $REGION
 gcloud config set compute/zone $ZONE
 
-export REGION=$REGION
-export ZONE=$ZONE
+echo ""
+echo "Projeto ativo: $(gcloud config get-value project)"
+echo "Região: $(gcloud config get-value compute/region)"
+echo "Zona: $(gcloud config get-value compute/zone)"
+echo ""
 
-echo -e "\n===== Região e Zona definidas ====="
-gcloud config list compute
+# Define variáveis de ambiente
+export PROJECT_ID=$(gcloud config get-value project)
+export ZONE=$(gcloud config get-value compute/zone)
+echo "Variáveis definidas:"
+echo "PROJECT_ID=$PROJECT_ID"
+echo "ZONE=$ZONE"
 
-# 2. Criação da instância VM
-echo -e "\n===== Criando VM gcelab2 ====="
+echo ""
+echo "===== Criando VM gcelab2 ====="
 gcloud compute instances create gcelab2 \
   --machine-type=e2-medium \
-  --zone=$ZONE \
-  --tags=http-server,https-server \
-  --quiet
+  --zone=$ZONE
 
-# 3. Instalação do NGINX via SSH automático
-echo -e "\n===== Instalando Nginx na VM ====="
-gcloud compute ssh gcelab2 --zone=$ZONE --command "sudo apt update && sudo apt install -y nginx" --quiet
+echo ""
+echo "===== Listando instâncias ====="
+gcloud compute instances list --filter="name=('gcelab2')"
 
-# 4. Regras de firewall HTTP
-echo -e "\n===== Criando regra de firewall HTTP ====="
+echo ""
+echo "===== Conectando via SSH na VM ====="
+echo "Aceite a criação da chave SSH e pressione ENTER quando solicitado..."
+gcloud compute ssh gcelab2 --zone=$ZONE --command="sudo apt update && sudo apt install -y nginx"
+
+echo ""
+echo "===== Saindo da VM ====="
+# o comando acima já roda e sai automaticamente após instalar o nginx
+
+echo ""
+echo "===== Adicionando tags de firewall ====="
+gcloud compute instances add-tags gcelab2 --tags=http-server,https-server
+
+echo ""
+echo "===== Criando regra de firewall HTTP ====="
 gcloud compute firewall-rules create default-allow-http \
   --direction=INGRESS \
   --priority=1000 \
@@ -44,20 +58,31 @@ gcloud compute firewall-rules create default-allow-http \
   --action=ALLOW \
   --rules=tcp:80 \
   --source-ranges=0.0.0.0/0 \
-  --target-tags=http-server \
-  --quiet
+  --target-tags=http-server
 
-# 5. Verificação do IP externo e teste com curl
-echo -e "\n===== Testando acesso HTTP ====="
-VM_IP=$(gcloud compute instances list --filter=name:gcelab2 --format='value(EXTERNAL_IP)')
-echo "Acesse via navegador: http://$VM_IP"
-curl -I http://$VM_IP
+echo ""
+echo "===== Verificando firewall ====="
+gcloud compute firewall-rules list --filter="ALLOW:'80'"
 
-# 6. Logs
-echo -e "\n===== Listando logs do sistema (amostra) ====="
-gcloud logging logs list --limit 5
-echo -e "\n===== Logs da instância gcelab2 ====="
-gcloud logging read "resource.type=gce_instance AND labels.instance_name='gcelab2'" --limit 5 --format="value(textPayload)"
+echo ""
+echo "===== Testando acesso HTTP ao Nginx ====="
+EXTERNAL_IP=$(gcloud compute instances list --filter="name=('gcelab2')" --format="value(EXTERNAL_IP)")
+echo "Acesse o Nginx via navegador: http://$EXTERNAL_IP"
+echo "Verificando com curl:"
+curl http://$EXTERNAL_IP
 
-echo -e "\n===== LAB CONCLUÍDO COM SUCESSO ====="
-echo "✅ VM criada, Nginx ativo, Firewall configurado, Logs verificados."
+echo ""
+echo "===== Listando logs disponíveis ====="
+gcloud logging logs list --limit=5
+
+echo ""
+echo "===== Logs relacionados ao Compute Engine ====="
+gcloud logging logs list --filter="compute" --limit=5
+
+echo ""
+echo "===== Logs da instância gcelab2 ====="
+gcloud logging read "resource.type=gce_instance AND labels.instance_name='gcelab2'" --limit=5
+
+echo ""
+echo "===== LAB CONCLUÍDO ====="
+echo "✅ VM criada, Nginx instalado, Firewall HTTP configurado, Logs verificados."
